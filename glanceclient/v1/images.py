@@ -30,9 +30,13 @@ UPDATE_PARAMS = ('name', 'disk_format', 'container_format', 'min_disk',
                  # compatibility with the legacy client library
                  'deleted')
 
-CREATE_PARAMS = UPDATE_PARAMS + ('id',)
+CREATE_PARAMS = UPDATE_PARAMS + ('id', 'store')
 
 DEFAULT_PAGE_SIZE = 20
+
+SORT_DIR_VALUES = ('asc', 'desc')
+SORT_KEY_VALUES = ('name', 'status', 'container_format', 'disk_format',
+                   'size', 'id', 'created_at', 'updated_at')
 
 
 class Image(base.Resource):
@@ -87,13 +91,16 @@ class ImageManager(base.Manager):
                     pass
         return meta
 
-    def get(self, image_id):
+    def get(self, image):
         """Get the metadata for a specific image.
 
         :param image: image object or id to look up
         :rtype: :class:`Image`
         """
-        resp, body = self.api.raw_request('HEAD', '/v1/images/%s' % image_id)
+
+        image_id = base.getid(image)
+        resp, body = self.api.raw_request('HEAD', '/v1/images/%s'
+                                          % urllib.quote(image_id))
         meta = self._image_meta_from_headers(dict(resp.getheaders()))
         return Image(self, meta)
 
@@ -105,7 +112,8 @@ class ImageManager(base.Manager):
         :rtype: iterable containing image data
         """
         image_id = base.getid(image)
-        resp, body = self.api.raw_request('GET', '/v1/images/%s' % image_id)
+        resp, body = self.api.raw_request('GET', '/v1/images/%s'
+                                          % urllib.quote(image_id))
         checksum = resp.getheader('x-image-meta-checksum', None)
         if do_checksum and checksum is not None:
             return utils.integrity_iter(body, checksum)
@@ -146,6 +154,22 @@ class ImageManager(base.Manager):
         if 'marker' in kwargs:
             params['marker'] = kwargs['marker']
 
+        sort_key = kwargs.get('sort_key')
+        if sort_key is not None:
+            if sort_key in SORT_KEY_VALUES:
+                params['sort_key'] = sort_key
+            else:
+                raise ValueError('sort_key must be one of the following: %s.'
+                                 % ', '.join(SORT_KEY_VALUES))
+
+        sort_dir = kwargs.get('sort_dir')
+        if sort_dir is not None:
+            if sort_dir in SORT_DIR_VALUES:
+                params['sort_dir'] = sort_dir
+            else:
+                raise ValueError('sort_dir must be one of the following: %s.'
+                                 % ', '.join(SORT_DIR_VALUES))
+
         filters = kwargs.get('filters', {})
         properties = filters.pop('properties', {})
         for key, value in properties.items():
@@ -177,10 +201,15 @@ class ImageManager(base.Manager):
                     # Illegal seek. This means the user is trying
                     # to pipe image data to the client, e.g.
                     # echo testdata | bin/glance add blah..., or
-                    # that stdin is empty
-                    return 0
+                    # that stdin is empty, or that a file-like
+                    # object which doesn't support 'seek/tell' has
+                    # been supplied.
+                    return None
                 else:
                     raise
+        else:
+            # Cannot determine size of input image
+            return None
 
     def create(self, **kwargs):
         """Create an image
@@ -190,10 +219,8 @@ class ImageManager(base.Manager):
         image_data = kwargs.pop('data', None)
         if image_data is not None:
             image_size = self._get_file_size(image_data)
-            if image_size != 0:
+            if image_size is not None:
                 kwargs.setdefault('size', image_size)
-            else:
-                image_data = None
 
         fields = {}
         for field in kwargs:
@@ -209,7 +236,7 @@ class ImageManager(base.Manager):
             hdrs['x-glance-api-copy-from'] = copy_from
 
         resp, body_iter = self.api.raw_request(
-                'POST', '/v1/images', headers=hdrs, body=image_data)
+            'POST', '/v1/images', headers=hdrs, body=image_data)
         body = json.loads(''.join([c for c in body_iter]))
         return Image(self, self._format_image_meta_for_user(body['image']))
 
@@ -218,16 +245,13 @@ class ImageManager(base.Manager):
 
         TODO(bcwaldon): document accepted params
         """
-        hdrs = {}
         image_data = kwargs.pop('data', None)
         if image_data is not None:
             image_size = self._get_file_size(image_data)
-            if image_size != 0:
+            if image_size is not None:
                 kwargs.setdefault('size', image_size)
-                hdrs['Content-Length'] = image_size
-            else:
-                image_data = None
 
+        hdrs = {}
         try:
             purge_props = 'true' if kwargs.pop('purge_props') else 'false'
         except KeyError:
@@ -250,6 +274,6 @@ class ImageManager(base.Manager):
 
         url = '/v1/images/%s' % base.getid(image)
         resp, body_iter = self.api.raw_request(
-                'PUT', url, headers=hdrs, body=image_data)
+            'PUT', url, headers=hdrs, body=image_data)
         body = json.loads(''.join([c for c in body_iter]))
         return Image(self, self._format_image_meta_for_user(body['image']))

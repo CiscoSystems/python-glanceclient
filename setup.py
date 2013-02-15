@@ -31,6 +31,7 @@ setuptools.setup(
     classifiers=[
         'Development Status :: 4 - Beta',
         'Environment :: Console',
+        'Environment :: OpenStack',
         'Intended Audience :: Developers',
         'Intended Audience :: Information Technology',
         'License :: OSI Approved :: Apache Software License',
@@ -42,6 +43,6 @@ setuptools.setup(
     dependency_links=dependency_links,
     tests_require=tests_require,
     setup_requires=['setuptools-git>=0.4'],
-    test_suite="nose.collector",
     entry_points={'console_scripts': ['glance = glanceclient.shell:main']},
+    data_files=[('glanceclient', ['glanceclient/versioninfo'])]
 )

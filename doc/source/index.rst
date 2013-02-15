@@ -36,6 +36,36 @@ Once you've configured your authentication parameters, you can run ``glance help
 Release Notes
 =============
 
+0.7.0
+-----
+
+* Add ``--store`` option to ``image-create`` command
+* Deprecate ``--ca-file`` in favor of ``--os-cacert``
+* 1082957_: Add ``--sort-key`` and ``--sort-dir`` CLI options to ``image-list`` command
+* 1081542_: Change default ``image-list`` CLI sort to order by image name ascending
+* 1079692_: Verify SSL certification hostnames when using HTTPS
+* 1080739_: Use ``--os-region-name`` in service catalog lookup
+
+.. _1082957: http://bugs.launchpad.net/python-glanceclient/+bug/1082957
+.. _1081542: http://bugs.launchpad.net/python-glanceclient/+bug/1081542
+.. _1079692: http://bugs.launchpad.net/python-glanceclient/+bug/1079692
+.. _1080739: http://bugs.launchpad.net/python-glanceclient/+bug/1080739
+
+0.6.0
+-----
+
+* Multiple image ID can be passed to ``glance image-delete``
+* ``glance --version`` and glanceclient.__version__ expose the current library version
+* Use ``--human-readable`` with ``image-list`` and ``image-show`` to display image sizes in human-friendly formats
+* Use OpenSSL for HTTPS connections
+* 1056220_: Always use 'Transfer-Encoding: chunked' when transferring image data
+* 1052846_: Padded endpoints enabled (e.g. glance.example.com/padding/v1)
+* 1050345_: ``glance image-create`` and ``glance image-update`` now work on Windows
+
+.. _1056220: http://bugs.launchpad.net/python-glanceclient/+bug/1056220
+.. _1052846: http://bugs.launchpad.net/python-glanceclient/+bug/1052846
+.. _1050345: http://bugs.launchpad.net/python-glanceclient/+bug/1050345
+
 0.5.1
 ----
 * 1045824_: Always send Content-Length when updating image with image data

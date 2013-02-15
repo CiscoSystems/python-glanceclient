@@ -16,7 +16,7 @@
 import errno
 import json
 import StringIO
-import unittest
+import testtools
 
 import glanceclient.v1.images
 from tests import utils
@@ -138,6 +138,41 @@ fixtures = {
             ]},
         ),
     },
+    '/v1/images/detail?sort_dir=desc&limit=20': {
+        'GET': (
+            {},
+            {'images': [
+                {
+                    'id': 'a',
+                    'name': 'image-1',
+                    'properties': {'arch': 'x86_64'},
+                },
+                {
+                    'id': 'b',
+                    'name': 'image-2',
+                    'properties': {'arch': 'x86_64'},
+                },
+            ]},
+        ),
+    },
+    '/v1/images/detail?sort_key=name&limit=20': {
+        'GET': (
+            {},
+            {'images': [
+                {
+                    'id': 'a',
+                    'name': 'image-1',
+                    'properties': {'arch': 'x86_64'},
+                },
+                {
+                    'id': 'b',
+                    'name': 'image-2',
+                    'properties': {'arch': 'x86_64'},
+                },
+            ]},
+        ),
+    },
+
     '/v1/images/1': {
         'HEAD': (
             {
@@ -174,7 +209,7 @@ fixtures = {
         'DELETE': ({}, None),
     },
     '/v1/images/2': {
-       'HEAD': (
+        'HEAD': (
             {
                 'x-image-meta-id': '2'
             },
@@ -188,7 +223,7 @@ fixtures = {
         ),
     },
     '/v1/images/3': {
-       'HEAD': (
+        'HEAD': (
             {
                 'x-image-meta-id': '3'
             },
@@ -204,9 +239,10 @@ fixtures = {
 }
 
 
-class ImageManagerTest(unittest.TestCase):
+class ImageManagerTest(testtools.TestCase):
 
     def setUp(self):
+        super(ImageManagerTest, self).setUp()
         self.api = utils.FakeAPI(fixtures)
         self.mgr = glanceclient.v1.images.ImageManager(self.api)
 
@@ -246,6 +282,18 @@ class ImageManagerTest(unittest.TestCase):
     def test_list_with_property_filters(self):
         list(self.mgr.list(filters={'properties': {'ping': 'pong'}}))
         url = '/v1/images/detail?property-ping=pong&limit=20'
+        expect = [('GET', url, {}, None)]
+        self.assertEqual(self.api.calls, expect)
+
+    def test_list_with_sort_dir(self):
+        list(self.mgr.list(sort_dir='desc'))
+        url = '/v1/images/detail?sort_dir=desc&limit=20'
+        expect = [('GET', url, {}, None)]
+        self.assertEqual(self.api.calls, expect)
+
+    def test_list_with_sort_key(self):
+        list(self.mgr.list(sort_key='name'))
+        url = '/v1/images/detail?sort_key=name&limit=20'
         expect = [('GET', url, {}, None)]
         self.assertEqual(self.api.calls, expect)
 
@@ -390,7 +438,7 @@ class ImageManagerTest(unittest.TestCase):
     def test_update_with_data(self):
         image_data = StringIO.StringIO('XXX')
         self.mgr.update('1', data=image_data)
-        expect_headers = {'x-image-meta-size': '3', 'Content-Length': 3}
+        expect_headers = {'x-image-meta-size': '3'}
         expect = [('PUT', '/v1/images/1', expect_headers, image_data)]
         self.assertEqual(self.api.calls, expect)
 
@@ -401,8 +449,9 @@ class ImageManagerTest(unittest.TestCase):
         self.assertEqual(self.api.calls, expect)
 
 
-class ImageTest(unittest.TestCase):
+class ImageTest(testtools.TestCase):
     def setUp(self):
+        super(ImageTest, self).setUp()
         self.api = utils.FakeAPI(fixtures)
         self.mgr = glanceclient.v1.images.ImageManager(self.api)
 

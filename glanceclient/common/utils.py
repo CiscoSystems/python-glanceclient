@@ -54,7 +54,7 @@ def print_list(objs, fields, formatters={}):
                 row.append(data)
         pt.add_row(row)
 
-    print pt.get_string(sortby=fields[0])
+    print pt.get_string()
 
 
 def print_dict(d):
@@ -81,12 +81,19 @@ def find_resource(manager, name_or_id):
         pass
 
     # finally try to find entity by name
-    try:
-        return manager.find(name=name_or_id)
-    except exc.NotFound:
+    matches = list(manager.list(filters={'name': name_or_id}))
+    num_matches = len(matches)
+    if num_matches == 0:
         msg = "No %s with a name or ID of '%s' exists." % \
               (manager.resource_class.__name__.lower(), name_or_id)
         raise exc.CommandError(msg)
+    elif num_matches > 1:
+        msg = ("Multiple %s matches found for '%s', use an ID to be more"
+               " specific." % (manager.resource_class.__name__.lower(),
+                               name_or_id))
+        raise exc.CommandError(msg)
+    else:
+        return matches[0]
 
 
 def skip_authentication(f):
@@ -168,3 +175,18 @@ def integrity_iter(iter, checksum):
         raise IOError(errno.EPIPE,
                       'Corrupt image download. Checksum was %s expected %s' %
                       (md5sum, checksum))
+
+
+def make_size_human_readable(size):
+    suffix = ['B', 'kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB']
+    base = 1024.0
+
+    index = 0
+    while size >= base:
+        index = index + 1
+        size = size / base
+
+    padded = '%.1f' % size
+    stripped = padded.rstrip('0').rstrip('.')
+
+    return '%s%s' % (stripped, suffix[index])

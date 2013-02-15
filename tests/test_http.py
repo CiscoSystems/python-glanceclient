@@ -15,15 +15,17 @@
 
 import httplib
 import socket
-import unittest
+import StringIO
+import testtools
 
 import mox
 
 from glanceclient import exc
 from glanceclient.common import http
+from tests import utils
 
 
-class TestClient(unittest.TestCase):
+class TestClient(testtools.TestCase):
     def test_connection_refused(self):
         """
         Should receive a CommunicationError if connection refused.
@@ -35,10 +37,10 @@ class TestClient(unittest.TestCase):
         m = mox.Mox()
         m.StubOutWithMock(httplib.HTTPConnection, 'request')
         httplib.HTTPConnection.request(
-                mox.IgnoreArg(),
-                mox.IgnoreArg(),
-                headers=mox.IgnoreArg(),
-                ).AndRaise(socket.error())
+            mox.IgnoreArg(),
+            mox.IgnoreArg(),
+            headers=mox.IgnoreArg(),
+        ).AndRaise(socket.error())
         m.ReplayAll()
         try:
             client.json_request('GET', '/v1/images/detail?limit=20')
@@ -49,7 +51,15 @@ class TestClient(unittest.TestCase):
             self.fail('An exception should have bypassed this line.')
         except exc.CommunicationError, comm_err:
             fail_msg = ("Exception message '%s' should contain '%s'" %
-                                        (comm_err.message, endpoint))
+                       (comm_err.message, endpoint))
             self.assertTrue(endpoint in comm_err.message, fail_msg)
         finally:
             m.UnsetStubs()
+
+
+class TestResponseBodyIterator(testtools.TestCase):
+    def test_iter_default_chunk_size_64k(self):
+        resp = utils.FakeResponse({}, StringIO.StringIO('X' * 98304))
+        iterator = http.ResponseBodyIterator(resp)
+        chunks = list(iterator)
+        self.assertEqual(chunks, ['X' * 65536, 'X' * 32768])
