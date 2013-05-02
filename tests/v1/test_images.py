@@ -16,12 +16,14 @@
 import errno
 import json
 import StringIO
+import sys
 import testtools
 import urlparse
 
 import glanceclient.v1.client as client
 import glanceclient.v1.images
 import glanceclient.v1.shell as shell
+import glanceclient.v1.legacy_shell as legacy_shell
 from tests import utils
 
 
@@ -333,7 +335,7 @@ class ImageManagerTest(testtools.TestCase):
         try:
             data = ''.join([b for b in data])
             self.fail('data did not raise an error.')
-        except IOError, e:
+        except IOError as e:
             self.assertEqual(errno.EPIPE, e.errno)
             msg = 'was fd7c5c4fdaa97163ee4ba8842baa537a expected wrong'
             self.assertTrue(msg in str(e))
@@ -507,7 +509,7 @@ class ImageTest(testtools.TestCase):
         try:
             data = ''.join([b for b in image.data()])
             self.fail('data did not raise an error.')
-        except IOError, e:
+        except IOError as e:
             self.assertEqual(errno.EPIPE, e.errno)
             msg = 'was fd7c5c4fdaa97163ee4ba8842baa537a expected wrong'
             self.assertTrue(msg in str(e))
@@ -550,6 +552,7 @@ class ParameterFakeAPI(utils.FakeAPI):
 class FakeArg(object):
     def __init__(self, arg_dict):
         self.arg_dict = arg_dict
+        self.fields = arg_dict.keys()
 
     def __getattr__(self, name):
         if name in self.arg_dict:
@@ -572,3 +575,20 @@ class UrlParameterTest(testtools.TestCase):
         qs_dict = urlparse.parse_qs(parts.query)
         self.assertTrue('is_public' in qs_dict)
         self.assertTrue(qs_dict['is_public'][0].lower() == "true")
+
+    def test_copy_from_used(self):
+        class LegacyFakeArg(object):
+            def __init__(self, fields):
+                self.fields = fields
+                self.dry_run = False
+                self.verbose = False
+
+        def images_create(**kwargs):
+            class FakeImage():
+                id = "ThisiSanID"
+            self.assertNotEqual(kwargs['data'], sys.stdin)
+            return FakeImage()
+
+        self.gc.images.create = images_create
+        args = LegacyFakeArg(["copy_from=http://somehost.com/notreal.qcow"])
+        legacy_shell.do_add(self.gc, args)
