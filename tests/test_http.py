@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import errno
 import httplib
 import socket
 import StringIO
@@ -42,6 +43,39 @@ class TestClient(testtools.TestCase):
         super(TestClient, self).tearDown()
         self.mock.UnsetStubs()
 
+    def test_identity_headers_and_token(self):
+        identity_headers = {
+            'X-Auth-Token': 'auth_token',
+            'X-User-Id': 'user',
+            'X-Tenant-Id': 'tenant',
+            'X-Roles': 'roles',
+            'X-Identity-Status': 'Confirmed',
+            'X-Service-Catalog': 'service_catalog',
+        }
+        #with token
+        kwargs = {'token': u'fake-token',
+                  'identity_headers': identity_headers}
+        http_client_object = http.HTTPClient(self.endpoint, **kwargs)
+        self.assertEquals(http_client_object.auth_token, 'auth_token')
+        self.assertTrue(http_client_object.identity_headers.
+                        get('X-Auth-Token') is None)
+
+    def test_identity_headers_and_no_token_in_header(self):
+        identity_headers = {
+            'X-User-Id': 'user',
+            'X-Tenant-Id': 'tenant',
+            'X-Roles': 'roles',
+            'X-Identity-Status': 'Confirmed',
+            'X-Service-Catalog': 'service_catalog',
+        }
+        #without X-Auth-Token in identity headers
+        kwargs = {'token': u'fake-token',
+                  'identity_headers': identity_headers}
+        http_client_object = http.HTTPClient(self.endpoint, **kwargs)
+        self.assertEquals(http_client_object.auth_token, u'fake-token')
+        self.assertTrue(http_client_object.identity_headers.
+                        get('X-Auth-Token') is None)
+
     def test_connection_refused(self):
         """
         Should receive a CommunicationError if connection refused.
@@ -61,7 +95,7 @@ class TestClient(testtools.TestCase):
             # rather than assertRaises() so that we can check the body of
             # the exception.
             self.fail('An exception should have bypassed this line.')
-        except exc.CommunicationError as comm_err:
+        except glanceclient.exc.CommunicationError as comm_err:
             fail_msg = ("Exception message '%s' should contain '%s'" %
                        (comm_err.message, self.endpoint))
             self.assertTrue(self.endpoint in comm_err.message, fail_msg)
@@ -82,6 +116,32 @@ class TestClient(testtools.TestCase):
         headers = {"test": u'ni\xf1o'}
         resp, body = self.client.raw_request('GET', '/v1/images/detail',
                                                     headers=headers)
+        self.assertEqual(resp, fake)
+
+    def test_headers_encoding(self):
+        headers = {"test": u'ni\xf1o'}
+        encoded = self.client.encode_headers(headers)
+        self.assertEqual(encoded["test"], "ni\xc3\xb1o")
+
+    def test_raw_request(self):
+        " Verify the path being used for HTTP requests reflects accurately. "
+
+        def check_request(method, path, **kwargs):
+            self.assertEqual(method, 'GET')
+            # NOTE(kmcdonald): See bug #1179984 for more details.
+            self.assertEqual(path, '/v1/images/detail')
+
+        httplib.HTTPConnection.request(
+            mox.IgnoreArg(),
+            mox.IgnoreArg(),
+            headers=mox.IgnoreArg()).WithSideEffects(check_request)
+
+        # fake the response returned by httplib
+        fake = utils.FakeResponse({}, StringIO.StringIO('Ok'))
+        httplib.HTTPConnection.getresponse().AndReturn(fake)
+        self.mock.ReplayAll()
+
+        resp, body = self.client.raw_request('GET', '/v1/images/detail')
         self.assertEqual(resp, fake)
 
     def test_connection_refused_raw_request(self):
@@ -182,8 +242,42 @@ class TestHostResolutionError(testtools.TestCase):
 
 
 class TestResponseBodyIterator(testtools.TestCase):
+
     def test_iter_default_chunk_size_64k(self):
         resp = utils.FakeResponse({}, StringIO.StringIO('X' * 98304))
         iterator = http.ResponseBodyIterator(resp)
         chunks = list(iterator)
         self.assertEqual(chunks, ['X' * 65536, 'X' * 32768])
+
+    def test_integrity_check_with_correct_checksum(self):
+        resp = utils.FakeResponse({}, StringIO.StringIO('CCC'))
+        body = http.ResponseBodyIterator(resp)
+        body.set_checksum('defb99e69a9f1f6e06f15006b1f166ae')
+        list(body)
+
+    def test_integrity_check_with_wrong_checksum(self):
+        resp = utils.FakeResponse({}, StringIO.StringIO('BB'))
+        body = http.ResponseBodyIterator(resp)
+        body.set_checksum('wrong')
+        try:
+            list(body)
+            self.fail('integrity checked passed with wrong checksum')
+        except IOError as e:
+            self.assertEqual(errno.EPIPE, e.errno)
+
+    def test_set_checksum_in_consumed_iterator(self):
+        resp = utils.FakeResponse({}, StringIO.StringIO('CCC'))
+        body = http.ResponseBodyIterator(resp)
+        list(body)
+        # Setting checksum for an already consumed iterator should raise an
+        # AttributeError.
+        self.assertRaises(
+            AttributeError, body.set_checksum,
+            'defb99e69a9f1f6e06f15006b1f166ae')
+
+    def test_body_size(self):
+        size = 1000000007
+        resp = utils.FakeResponse(
+            {'content-length': str(size)}, StringIO.StringIO('BB'))
+        body = http.ResponseBodyIterator(resp)
+        self.assertEqual(len(body), size)
